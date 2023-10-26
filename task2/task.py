@@ -1,137 +1,95 @@
+from typing import Dict, List, Tuple
 import csv
+import io
 
-# Считываем дерево из файла
-def read_tree(filename):
-    tree = {}
-    with open(filename, 'r') as f:
-        reader = csv.reader(f, delimiter=';')
-        for row in reader:
-            parent, child = map(int, row)
-            if parent not in tree:
-                tree[parent] = []
-            tree[parent].append(child)
-    return tree
+def parse_csv(input_string: str) -> List[Tuple[int, int]]:
+    edges = []
+    f = io.StringIO(input_string)
+    reader = csv.reader(f, delimiter=';')
+    for row in reader:
+        if len(row) == 2:
+            edges.append((int(row[0]), int(row[1])))
+    return edges
 
-# Получаем непосредственных детей (подчиненных) узла
-def get_children(node, tree):
-    return tree.get(node, [])
+def build_graph(edges: List[Tuple[int, int]]) -> Dict[int, List[int]]:
+    graph = {}
+    for edge in edges:
+        if edge[0] not in graph:
+            graph[edge[0]] = []
+        graph[edge[0]].append(edge[1])
+    return graph
 
-# Проверяем, является ли node1 родителем для node2
-def is_direct_manager(node1, node2, tree):
-    return node2 in get_children(node1, tree)
+def dfs_depth(graph: Dict[int, List[int]], node: int, depth: int, depths: Dict[int, int]) -> None:
+    depths[node] = depth
+    if node in graph:
+        for child in graph[node]:
+            dfs_depth(graph, child, depth + 1, depths)
 
-# Проверяем, является ли node1 дочерним узлом для node2
-def is_direct_subordinate(node1, node2, tree):
-    return is_direct_manager(node2, node1, tree)
+def dfs_subtree_size(graph: Dict[int, List[int]], node: int, subtree_sizes: Dict[int, int]) -> int:
+    if node not in graph:
+        subtree_sizes[node] = 1
+        return 1
+    size = 1
+    for child in graph[node]:
+        size += dfs_subtree_size(graph, child, subtree_sizes)
+    subtree_sizes[node] = size
+    return size
 
-# Проверяем, управляет ли node1 node2 опосредованно
-def is_indirect_manager(node1, node2, tree):
-    for child in get_children(node1, tree):
-        if child != node2 and (child == node2 or is_indirect_manager(child, node2, tree)):
-            return True
-    return False
+def calculate_levels_depths(depths: Dict[int, int]) -> Dict[int, List[int]]:
+    levels = {}
+    for node, depth in depths.items():
+        if depth not in levels:
+            levels[depth] = []
+        levels[depth].append(node)
+    return levels
 
-# Проверяем, является ли node1 опосредованным подчиненным для node2
-def is_indirect_subordinate(node1, node2, tree):
-    return is_indirect_manager(node2, node1, tree)
-
-# Проверяем, являются ли node1 и node2 соподчиненными узлами
-def is_peer(node1, node2, tree):
-    for key in tree:
-        if is_direct_subordinate(node1, key, tree) and is_direct_subordinate(node2, key, tree) and node1 != node2:
-            return True
-    return False
-
-def get_all_descendants(node, tree):
-    descendants = set()
-    children = get_children(node, tree)
-    descendants.update(children)
-    for child in children:
-        descendants.update(get_all_descendants(child, tree))
-    return descendants
-
-def get_parent(node, tree):
-    for key, children in tree.items():
-        if node in children:
-            return key
-    return None
-
-def get_all_ancestors(node, tree):
-    ancestors = set()
-    parent = get_parent(node, tree)
-    while parent is not None:
-        ancestors.add(parent)
-        parent = get_parent(parent, tree)
-    return ancestors
-
-def determine_relations(tree):
-    relations_list = []
-    all_nodes = sorted(list(set(tree.keys()).union(*tree.values())))
-
-    for node in all_nodes:
-        node_relations = [
-            [],  # непосредственное управление
-            [],  # непосредственное подчинение
-            [],  # опосредованное управление
-            [],  # опосредованное подчинение
-            []   # соподчиненность
-        ]
-
-        for other_node in all_nodes:
-            if other_node == node:
-                continue
-            if is_direct_manager(node, other_node, tree):
-                node_relations[0].append(other_node)
-            elif is_direct_subordinate(node, other_node, tree):
-                node_relations[1].append(other_node)
-            elif other_node in get_all_descendants(node, tree) and not is_direct_manager(node, other_node, tree):
-                node_relations[2].append(other_node)
-            elif other_node in get_all_ancestors(node, tree) and not is_direct_subordinate(node, other_node, tree):
-                node_relations[3].append(other_node)
-            elif is_peer(node, other_node, tree):
-                node_relations[4].append(other_node)
-
-        relations_list.append(node_relations)
-
-    return relations_list
-
-def task_2_1():
-    filename = "tree_list.csv"
-    tree = read_tree(filename)
-    all_relations = determine_relations(tree)
-
-    for node_relations in all_relations:
-        print(node_relations)
-
-
-def gather_relations_by_type(all_relations):
-    # Получаем все уникальные узлы
-    all_nodes = sorted(list(set(node for relations in all_relations for node_list in relations for node in node_list)))
-
-    relations_by_type = [set() for _ in range(5)]
-
-    for idx, node_relations in enumerate(all_relations):
-        node = all_nodes[idx]
-        for rel_idx, nodes in enumerate(node_relations):
-            if nodes:
-                relations_by_type[rel_idx].add(node)
-
-    # Преобразуем множества в списки
-    for idx, rel_set in enumerate(relations_by_type):
-        relations_by_type[idx] = sorted(list(rel_set))
-
-    return relations_by_type
-
-def task_2_2():
-    filename = "tree_list.csv"
-    tree = read_tree(filename)
-    all_relations = determine_relations(tree)
+def task(csv_string: str) -> str:
+    edges = parse_csv(csv_string)
     
-    relations_by_type = gather_relations_by_type(all_relations)
+    graph = build_graph(edges)
+    reverse_graph = {child: parent for parent, children in graph.items() for child in children}
 
-    res = []
-    for rel_list in relations_by_type:
-        res.append(rel_list)
+    children_counts = {node: len(children) for node, children in graph.items()}
+    depths = {}
+    subtree_sizes = {}
+    same_level = {}
 
-    return res
+    for node in graph:
+        if node not in depths:
+            dfs_depth(graph, node, 0, depths)
+        if node not in subtree_sizes:
+            dfs_subtree_size(graph, node, subtree_sizes)
+    
+    levels = calculate_levels_depths(depths)
+    
+    for level, nodes in levels.items():
+        for node in nodes:
+            same_level[node] = len(nodes) - 1
+    
+    all_nodes = set(graph.keys()) | {child for children in graph.values() for child in children}
+    
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter='\t')
+    
+    for node in sorted(all_nodes):
+        r1 = children_counts.get(node, 0)
+        r2 = 1 if node in reverse_graph else 0
+        r3 = subtree_sizes.get(node, 1) - r1 - 1
+        r4 = depths.get(node, 0) - 1 if node in reverse_graph else 0
+        r5 = same_level.get(node, 0)
+        writer.writerow([r1, r2, r3, r4, r5])
+    
+    return output.getvalue().strip()
 
+
+def csv_string_to_file(csv_string: str, file_path: str) -> None:
+    data = csv_string.replace('\t', ';')
+    
+    with open(file_path, 'w', newline='') as csvfile:
+        csvfile.write(data)
+
+csv_string = "1;2\n1;3\n3;4\n3;5"
+csv_result = task(csv_string) 
+
+csv_file_path_csvlib = "./task3.csv"
+csv_string_to_file(csv_result, csv_file_path_csvlib)
